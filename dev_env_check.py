@@ -470,6 +470,8 @@ class DevEnvChecker:
         try:
             found_keys = []
             warnings = []
+            orphaned_keys = []
+            weak_keys = []
             
             def scan_directory(directory, relative_path="", depth=0, max_depth=3):
                 """Recursively scan directory for SSH keys with depth limit"""
@@ -490,11 +492,16 @@ class DevEnvChecker:
                     item_relative = os.path.join(relative_path, item) if relative_path else item
                     
                     if os.path.isfile(item_path):
+                        # Check for public keys without private keys
+                        if item.endswith('.pub'):
+                            private_key_path = item_path[:-4]  # Remove .pub extension
+                            if not os.path.exists(private_key_path):
+                                orphaned_keys.append(f"Public key without private: {item_relative}")
+                        
                         # Check if it's a potential private key (no .pub extension)
-                        if not item.endswith('.pub'):
+                        elif not item.endswith('.pub'):
                             pub_path = item_path + '.pub'
                             
-                            # Only include keys that have corresponding .pub files
                             if os.path.exists(pub_path):
                                 try:
                                     # Try to determine key type by reading the public key
@@ -502,10 +509,23 @@ class DevEnvChecker:
                                         pub_content = f.read().strip()
                                     
                                     key_type = "Unknown"
+                                    is_weak = False
+                                    
                                     if pub_content.startswith('ssh-rsa '):
                                         key_type = "RSA"
+                                        # Check RSA key strength (basic heuristic)
+                                        parts = pub_content.split()
+                                        if len(parts) >= 2:
+                                            # RSA keys < 2048 bits are considered weak
+                                            # This is a rough estimate based on key length
+                                            key_data = parts[1]
+                                            if len(key_data) < 350:  # Rough estimate for < 2048 bit
+                                                is_weak = True
+                                                weak_keys.append(f"{item_relative}: RSA key may be < 2048 bits")
                                     elif pub_content.startswith('ssh-dss '):
                                         key_type = "DSA"
+                                        is_weak = True
+                                        weak_keys.append(f"{item_relative}: DSA keys are deprecated")
                                     elif pub_content.startswith('ecdsa-sha2-'):
                                         key_type = "ECDSA"
                                     elif pub_content.startswith('ssh-ed25519 '):
@@ -516,11 +536,22 @@ class DevEnvChecker:
                                         'path': item_relative,
                                         'directory': relative_path or ".",
                                         'type': key_type,
-                                        'has_public': True
+                                        'has_public': True,
+                                        'is_weak': is_weak
                                     })
                                     
                                 except Exception as e:
                                     warnings.append(f"Could not read {item_relative}: {str(e)}")
+                            else:
+                                # Private key without public key
+                                # Check if it looks like an SSH key by trying to read first few lines
+                                try:
+                                    with open(item_path, 'r') as f:
+                                        first_line = f.readline().strip()
+                                    if 'BEGIN' in first_line and 'PRIVATE KEY' in first_line:
+                                        orphaned_keys.append(f"Private key without public: {item_relative}")
+                                except:
+                                    pass  # Not a readable key file
                     
                     elif os.path.isdir(item_path) and depth < max_depth:
                         # Recursively scan subdirectory
@@ -530,6 +561,14 @@ class DevEnvChecker:
             scan_directory(ssh_dir)
             
             # Create summary
+            all_issues = []
+            if orphaned_keys:
+                all_issues.extend(orphaned_keys)
+            if weak_keys:
+                all_issues.extend(weak_keys)
+            if warnings:
+                all_issues.extend(warnings)
+            
             if found_keys:
                 key_types = [key['type'] for key in found_keys]
                 type_counts = {}
@@ -539,17 +578,24 @@ class DevEnvChecker:
                 summary_parts = [f"{count} {ktype}" for ktype, count in type_counts.items()]
                 summary = f"Found {len(found_keys)} keys: {', '.join(summary_parts)}"
                 
-                if warnings:
-                    summary += f" (Warnings: {len(warnings)})"
+                # Determine status based on issues found
+                status = "OK"
+                if orphaned_keys or weak_keys:
+                    status = "WARNING"
+                    issue_count = len(orphaned_keys) + len(weak_keys)
+                    summary += f" ({issue_count} issues)"
+                elif warnings:
+                    status = "WARNING"
+                    summary += f" ({len(warnings)} warnings)"
                 
                 details = summary
-                if warnings:
-                    details += f"\nWarnings: {'; '.join(warnings)}"
+                if all_issues:
+                    details += f"\nIssues: {'; '.join(all_issues)}"
                 
-                self.add_result("SSH Keys", "SSH keys", "OK", details)
+                self.add_result("SSH Keys", "SSH keys", status, details)
             else:
-                if warnings:
-                    self.add_result("SSH Keys", "SSH keys", "WARNING", f"No valid key pairs found. Warnings: {'; '.join(warnings)}")
+                if all_issues:
+                    self.add_result("SSH Keys", "SSH keys", "WARNING", f"No valid key pairs found. Issues: {'; '.join(all_issues)}")
                 else:
                     self.add_result("SSH Keys", "SSH keys", "INFO", "No SSH key pairs found")
         
@@ -621,7 +667,7 @@ class DevEnvChecker:
                 else:
                     summary = f"Total: {total_entries}, Custom: {custom_count} entries"
                 
-                self.add_result("System", "/etc/hosts", "OK", summary)
+                self.add_result("System", "/etc/hosts", "WARNING", summary)
             else:
                 summary = f"Total: {total_entries}, Standard entries only"
                 self.add_result("System", "/etc/hosts", "OK", summary)
