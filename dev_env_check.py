@@ -194,7 +194,8 @@ class DevEnvChecker:
             try:
                 result = subprocess.run(['terraform', 'version'], capture_output=True, text=True, timeout=10)
                 if result.returncode == 0:
-                    version_info = result.stdout.strip()
+                    # Take only the first line and clean it up
+                    version_info = result.stdout.strip().split('\n')[0]
                     self.add_result("Terraform", "Version check", "OK", version_info)
             except Exception as e:
                 self.add_result("Terraform", "Version check", "ERROR", str(e))
