@@ -23,6 +23,7 @@ class Colors:
 class DevEnvChecker:
     def __init__(self):
         self.results = []
+        self.custom_hosts_entries = []
         
     def add_result(self, category: str, item: str, status: str, details: str = ""):
         """Add a check result to the results list"""
@@ -253,6 +254,84 @@ class DevEnvChecker:
         except Exception as e:
             self.add_result("SSH", "Known hosts", "ERROR", f"Failed to parse: {str(e)}")
     
+    def check_hosts_file(self):
+        """Check /etc/hosts file and identify non-standard entries"""
+        hosts_path = "/etc/hosts"
+        
+        if not os.path.exists(hosts_path):
+            self.add_result("System", "/etc/hosts", "MISSING", "File not found")
+            return
+        
+        try:
+            with open(hosts_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Standard entries that are typically found in /etc/hosts
+            standard_entries = {
+                '127.0.0.1': ['localhost'],
+                '::1': ['localhost'],
+                '255.255.255.255': ['broadcasthost'],
+                'fe80::1%lo0': ['localhost']
+            }
+            
+            custom_entries = []
+            total_entries = 0
+            
+            for line in lines:
+                line = line.strip()
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Parse the line
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                
+                ip = parts[0]
+                hostnames = parts[1:]
+                total_entries += 1
+                
+                # Check if this is a standard entry
+                is_standard = False
+                if ip in standard_entries:
+                    # Check if hostnames match standard ones
+                    expected_hostnames = standard_entries[ip]
+                    if set(hostnames).issubset(set(expected_hostnames)):
+                        is_standard = True
+                
+                # If not standard, add to custom entries
+                if not is_standard:
+                    custom_entries.append({
+                        'ip': ip,
+                        'hostnames': hostnames
+                    })
+            
+            # Create summary
+            if custom_entries:
+                custom_count = len(custom_entries)
+                if custom_count <= 5:  # Show details if reasonable number
+                    custom_list = []
+                    for entry in custom_entries[:5]:
+                        hostnames_str = ', '.join(entry['hostnames'])
+                        custom_list.append(f"{entry['ip']} -> {hostnames_str}")
+                    summary = f"Total: {total_entries}, Custom: {custom_count} ({'; '.join(custom_list)})"
+                else:
+                    summary = f"Total: {total_entries}, Custom: {custom_count} entries"
+                
+                self.add_result("System", "/etc/hosts", "OK", summary)
+            else:
+                summary = f"Total: {total_entries}, Standard entries only"
+                self.add_result("System", "/etc/hosts", "OK", summary)
+            
+            # Store custom entries for detailed display
+            self.custom_hosts_entries = custom_entries
+            
+        except PermissionError:
+            self.add_result("System", "/etc/hosts", "ERROR", "Permission denied")
+        except Exception as e:
+            self.add_result("System", "/etc/hosts", "ERROR", f"Failed to parse: {str(e)}")
+    
     def print_ssh_config_details(self):
         """Print detailed SSH configuration table"""
         ssh_config_path = os.path.expanduser("~/.ssh/config")
@@ -376,13 +455,30 @@ class DevEnvChecker:
         except Exception as e:
             print(f"Error parsing known hosts: {e}")
     
+    def print_hosts_details(self):
+        """Print detailed /etc/hosts custom entries table"""
+        if not hasattr(self, 'custom_hosts_entries') or not self.custom_hosts_entries:
+            return
+        
+        print(f"\n{Colors.BOLD}🏠 /etc/hosts Custom Entries{Colors.END}")
+        print("=" * 70)
+        print(f"{Colors.BOLD}{'IP Address':<20} {'Hostnames':<50}{Colors.END}")
+        print("-" * 70)
+        
+        for entry in self.custom_hosts_entries:
+            hostnames_str = ', '.join(entry['hostnames'])
+            # Truncate if too long
+            if len(hostnames_str) > 48:
+                hostnames_str = hostnames_str[:45] + '...'
+            print(f"{entry['ip']:<20} {hostnames_str:<50}")
+    
     def run_all_checks(self):
         """Run all environment checks"""
         print(f"{Colors.BOLD}🔍 Local Development Environment Check{Colors.END}\n")
         
         # File checks
         print("Checking system files...")
-        self.check_file_exists("/etc/hosts", "System", "/etc/hosts")
+        self.check_hosts_file()
         
         # SSH configuration checks
         print("Checking SSH configuration...")
@@ -475,7 +571,8 @@ def main():
         checker.run_all_checks()
         checker.print_results()
         
-        # Print detailed SSH tables
+        # Print detailed tables
+        checker.print_hosts_details()
         checker.print_ssh_config_details()
         checker.print_known_hosts_details()
         
