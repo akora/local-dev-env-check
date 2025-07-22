@@ -4,12 +4,14 @@ A simple script to check the status of various files, tools, and configurations 
 
 ## Features
 
-- ✅ **File existence checks**: `/etc/hosts`, SSH config files
-- 🛠️ **Command line tools**: Git, Docker, Ansible, Terraform
-- ☁️ **Cloud provider credentials**: AWS, Google Cloud, DigitalOcean
-- 🔧 **Configuration validation**: Ansible and Terraform setup
-- 🎨 **Colored terminal output** with status indicators
-- 📊 **Summary statistics** of all checks
+- ✅ **Intelligent file analysis**: `/etc/hosts` with custom entry detection, SSH config parsing
+- 🛠️ **Command line tools**: Git, Docker, Ansible, Terraform with version checks
+- ☁️ **Cloud provider credentials**: AWS, Google Cloud, DigitalOcean with API connectivity tests
+- 🔧 **Configuration validation**: Ansible and Terraform setup verification
+- 🎨 **Professional output**: Colored terminal with status indicators and tabular formatting
+- 📊 **Detailed analysis**: Summary statistics plus dedicated detail tables
+- 🔍 **SSH infrastructure**: Comprehensive SSH config and known hosts analysis
+- 🏠 **Custom host detection**: Identifies non-standard entries in `/etc/hosts`
 
 ## Usage
 
@@ -25,9 +27,9 @@ The script provides detailed error handling, JSON parsing for API responses, and
 
 ### System Files
 
-- `/etc/hosts` - System hosts file
-- `~/.ssh/config` - SSH client configuration
-- `~/.ssh/known_hosts` - SSH known hosts
+- **`/etc/hosts`** - Intelligent analysis detecting custom entries beyond system defaults
+- **`~/.ssh/config`** - SSH client configuration with host parsing and settings analysis
+- **`~/.ssh/known_hosts`** - SSH known hosts with key type analysis and host identification
 
 ### Command Line Tools
 
@@ -67,12 +69,32 @@ The script provides detailed error handling, JSON parsing for API responses, and
 
 ## Output Format
 
-The script provides colored output with status indicators:
+The script provides comprehensive output in multiple sections:
+
+### Main Results Table
+
+Professional tabular format with colored status indicators:
 
 - ✅ **OK** - Check passed successfully
 - ❌ **MISSING** - File or command not found
 - ❌ **ERROR** - Command failed or API error
 - ⚠️ **WARNING** - Partial success or configuration issue
+
+### Detailed Analysis Tables
+
+When relevant, additional detailed tables are displayed:
+
+- **🏠 /etc/hosts Custom Entries** - Shows non-standard host mappings (when present)
+- **🔧 SSH Configuration Details** - Complete SSH config with hosts, IPs, users, and key files
+- **🔑 SSH Known Hosts Details** - All known hosts with their key types
+
+### Summary Statistics
+
+Final summary showing:
+
+- Total number of checks performed
+- Count of passed, failed, and warning results
+- Quick overview of system health
 
 ## Requirements
 
