@@ -126,28 +126,55 @@ def check_kubectl(self):
 ```text
 🔍 Local Development Environment Check
 
-System
-------
-  /etc/hosts                     ✅ OK (Size: 298 bytes)
-
-SSH
----
-  SSH config                     ✅ OK (Size: 1024 bytes)
-  Known hosts                    ✅ OK (Size: 2048 bytes)
-
-Tools
------
-  Git (installed)                ✅ OK (Path: /usr/bin/git)
-  Git (version)                  ✅ OK (git version 2.39.0)
+Checking system files...
+Checking SSH configuration...
+Checking command line tools...
+Checking cloud providers...
+Checking Ansible configuration...
+Checking Terraform configuration...
 
 📊 Results Summary
-================================================================================
+========================================================================================================================
+Category        Item                                Status       Details                                           
+------------------------------------------------------------------------------------------------------------------------
+System          /etc/hosts                          ✅ OK        Total: 3, Standard entries only                   
+------------------------------------------------------------------------------------------------------------------------
+SSH             SSH config                          ✅ OK        Hosts: 5                                          
+                Known hosts                         ✅ OK        Entries: 19                                       
+------------------------------------------------------------------------------------------------------------------------
+Tools           Git (installed)                     ✅ OK        Path: /opt/homebrew/bin/git                       
+                Git (version)                       ✅ OK        git version 2.49.0                                
+                Docker (installed)                  ✅ OK        Path: /Users/user/.docker/bin/docker             
+                Docker (version)                    ✅ OK        Docker version 28.2.2, build e6534b4              
+------------------------------------------------------------------------------------------------------------------------
+AWS             Credentials file                    ✅ OK        Size: 116 bytes                                   
+                Config file                         ✅ OK        Size: 46 bytes                                    
+                AWS CLI                             ✅ OK        Path: /opt/homebrew/bin/aws                       
+                API connectivity                    ✅ OK        arn:aws:iam::123456789012:user/MyUser              
+------------------------------------------------------------------------------------------------------------------------
 
 Summary:
-  Total checks: 15
-  ✅ Passed: 12
-  ❌ Failed: 2
-  ⚠️  Warnings: 1
+  Total checks: 25
+  ✅ Passed: 22
+  ❌ Failed: 3
+  ⚠️  Warnings: 0
+
+🔧 SSH Configuration Details
+====================================================================================================
+Host                 Hostname                  User            Port     Other Settings                
+----------------------------------------------------------------------------------------------------
+server-01            192.168.1.10              user            22       Identityfile: id_ed25519 
+server-02            192.168.1.20              user            22       Identityfile: id_ed25519 
+cloud-server         203.0.113.10              user            22       Identityfile: cloud-key  
+
+🔑 SSH Known Hosts Details
+=================================================================
+Host/IP                                  Key Type                 
+-----------------------------------------------------------------
+192.168.1.10                             ssh-ed25519              
+192.168.1.20                             ssh-ed25519              
+203.0.113.10                             ssh-ed25519              
+github.com                               ssh-ed25519              
 ```
 
 ## Example Configurations
