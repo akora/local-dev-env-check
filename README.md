@@ -11,7 +11,9 @@ A simple script to check the status of various files, tools, and configurations 
 - 🎨 **Professional output**: Colored terminal with status indicators and tabular formatting
 - 📊 **Detailed analysis**: Summary statistics plus dedicated detail tables
 - 🔍 **SSH infrastructure**: Comprehensive SSH config and known hosts analysis
-- 🏠 **Custom host detection**: Identifies non-standard entries in `/etc/hosts`
+- 🔐 **SSH key security**: Detects orphaned keys and weak key types with security warnings
+- 🏠 **Custom host detection**: Identifies non-standard entries in `/etc/hosts` with warnings
+- ⚠️ **Security warnings**: Proactive alerts for potential security issues
 
 ## Usage
 
@@ -27,9 +29,13 @@ The script provides detailed error handling, JSON parsing for API responses, and
 
 ### System Files
 
-- **`/etc/hosts`** - Intelligent analysis detecting custom entries beyond system defaults
+- **`/etc/hosts`** - Intelligent analysis detecting custom entries beyond system defaults (⚠️ WARNING for non-standard entries)
 - **`~/.ssh/config`** - SSH client configuration with host parsing and settings analysis
 - **`~/.ssh/known_hosts`** - SSH known hosts with key type analysis and host identification
+- **`~/.ssh/` keys** - SSH key pair validation with security warnings:
+  - Detects orphaned keys (private without public, public without private)
+  - Identifies weak key types (DSA deprecated, RSA < 2048 bits)
+  - Shows ⚠️ WARNING status for security issues
 
 ### Command Line Tools
 
@@ -78,7 +84,7 @@ Professional tabular format with colored status indicators:
 - ✅ **OK** - Check passed successfully
 - ❌ **MISSING** - File or command not found
 - ❌ **ERROR** - Command failed or API error
-- ⚠️ **WARNING** - Partial success or configuration issue
+- ⚠️ **WARNING** - Security issues, configuration problems, or non-standard setups detected
 
 ### Detailed Analysis Tables
 
@@ -86,6 +92,7 @@ When relevant, additional detailed tables are displayed:
 
 - **🏠 /etc/hosts Custom Entries** - Shows non-standard host mappings (when present)
 - **🔧 SSH Configuration Details** - Complete SSH config with hosts, IPs, users, and key files
+- **🔐 SSH Keys Details** - SSH key pairs with types, creation dates, and security status
 - **🔑 SSH Known Hosts Details** - All known hosts with their key types
 
 ### Summary Statistics
@@ -142,6 +149,8 @@ System          /etc/hosts                          ✅ OK        Total: 3, Stan
 SSH             SSH config                          ✅ OK        Hosts: 5                                          
                 Known hosts                         ✅ OK        Entries: 19                                       
 ------------------------------------------------------------------------------------------------------------------------
+SSH Keys        SSH keys                            ✅ OK        Found 3 keys: 3 ED25519                           
+------------------------------------------------------------------------------------------------------------------------
 Tools           Git (installed)                     ✅ OK        Path: /opt/homebrew/bin/git                       
                 Git (version)                       ✅ OK        git version 2.49.0                                
                 Docker (installed)                  ✅ OK        Path: /Users/user/.docker/bin/docker             
@@ -167,6 +176,14 @@ server-01            192.168.1.10              user            22       Identity
 server-02            192.168.1.20              user            22       Identityfile: id_ed25519 
 cloud-server         203.0.113.10              user            22       Identityfile: cloud-key  
 
+🔐 SSH Keys Details
+==============================================================================================================
+Directory            Key Name                  Type            Details              Created         Public    
+--------------------------------------------------------------------------------------------------------------
+.                    id_ed25519                ED25519         ED25519 256-bit      2024-01-15      ✅ Yes     
+                     cloud-key                 ED25519         ED25519 256-bit      2024-02-20      ✅ Yes     
+                     old_rsa_key               RSA             RSA 1024-bit         2020-03-10      ⚠️ Weak    
+
 🔑 SSH Known Hosts Details
 =================================================================
 Host/IP                                  Key Type                 
@@ -176,6 +193,33 @@ Host/IP                                  Key Type
 203.0.113.10                             ssh-ed25519              
 github.com                               ssh-ed25519              
 ```
+
+## Security Warnings
+
+The script proactively identifies potential security issues and shows ⚠️ **WARNING** status for:
+
+### /etc/hosts Security
+
+- **Non-standard entries**: Custom host mappings that go beyond system defaults
+- **Potential security risk**: Custom entries could indicate malware or misconfigurations
+- **Example**: `192.168.1.100 suspicious-site.com` would trigger a warning
+
+### SSH Key Security
+
+- **Orphaned keys**:
+  - Private keys without corresponding public keys
+  - Public keys without corresponding private keys
+- **Weak key types**:
+  - **DSA keys**: Deprecated and considered insecure
+  - **RSA keys < 2048 bits**: Vulnerable to modern attacks
+- **Recommended**: Use ED25519 keys for maximum security
+
+### Security Best Practices
+
+- ✅ **Strong keys**: ED25519 or RSA ≥ 2048 bits
+- ✅ **Complete pairs**: Every private key should have a corresponding public key
+- ✅ **Clean /etc/hosts**: Only standard system entries unless specifically needed
+- ⚠️ **Review warnings**: Investigate any security warnings promptly
 
 ## Example Configurations
 
