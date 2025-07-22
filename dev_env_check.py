@@ -455,6 +455,96 @@ class DevEnvChecker:
         except Exception as e:
             self.add_result("SSH", "Known hosts", "ERROR", f"Failed to parse: {str(e)}")
     
+    def check_ssh_keys(self):
+        """Check SSH keys in .ssh directory"""
+        ssh_dir = os.path.expanduser("~/.ssh")
+        
+        if not os.path.exists(ssh_dir):
+            self.add_result("SSH Keys", "SSH directory", "MISSING", f"Path: {ssh_dir}")
+            return
+        
+        if not os.access(ssh_dir, os.R_OK):
+            self.add_result("SSH Keys", "SSH directory", "WARNING", f"Permission denied: {ssh_dir}")
+            return
+        
+        try:
+            # Common SSH key patterns
+            key_patterns = [
+                'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519',
+                'id_rsa_*', 'id_dsa_*', 'id_ecdsa_*', 'id_ed25519_*'
+            ]
+            
+            found_keys = []
+            warnings = []
+            
+            # Get all files in .ssh directory
+            try:
+                ssh_files = os.listdir(ssh_dir)
+            except PermissionError as e:
+                self.add_result("SSH Keys", "SSH directory", "WARNING", f"Permission denied: {str(e)}")
+                return
+            
+            # Find potential private key files (no .pub extension)
+            private_key_files = [f for f in ssh_files if not f.endswith('.pub') and not f.startswith('.') 
+                               and os.path.isfile(os.path.join(ssh_dir, f))]
+            
+            for key_file in private_key_files:
+                key_path = os.path.join(ssh_dir, key_file)
+                pub_path = key_path + '.pub'
+                
+                # Only include keys that have corresponding .pub files
+                if os.path.exists(pub_path):
+                    try:
+                        # Try to determine key type by reading the public key
+                        with open(pub_path, 'r') as f:
+                            pub_content = f.read().strip()
+                        
+                        key_type = "Unknown"
+                        if pub_content.startswith('ssh-rsa '):
+                            key_type = "RSA"
+                        elif pub_content.startswith('ssh-dss '):
+                            key_type = "DSA"
+                        elif pub_content.startswith('ecdsa-sha2-'):
+                            key_type = "ECDSA"
+                        elif pub_content.startswith('ssh-ed25519 '):
+                            key_type = "ED25519"
+                        
+                        found_keys.append({
+                            'name': key_file,
+                            'type': key_type,
+                            'has_public': True
+                        })
+                        
+                    except Exception as e:
+                        warnings.append(f"Could not read {key_file}: {str(e)}")
+            
+            # Create summary
+            if found_keys:
+                key_types = [key['type'] for key in found_keys]
+                type_counts = {}
+                for kt in key_types:
+                    type_counts[kt] = type_counts.get(kt, 0) + 1
+                
+                summary_parts = [f"{count} {ktype}" for ktype, count in type_counts.items()]
+                summary = f"Found {len(found_keys)} keys: {', '.join(summary_parts)}"
+                
+                if warnings:
+                    summary += f" (Warnings: {len(warnings)})"
+                
+                details = summary
+                if warnings:
+                    details += f"\nWarnings: {'; '.join(warnings)}"
+                
+                self.add_result("SSH Keys", "SSH keys", "OK", details)
+            else:
+                if warnings:
+                    self.add_result("SSH Keys", "SSH keys", "WARNING", f"No valid key pairs found. Warnings: {'; '.join(warnings)}")
+                else:
+                    self.add_result("SSH Keys", "SSH keys", "INFO", "No SSH key pairs found")
+        
+        except Exception as e:
+            self.add_result("SSH Keys", "SSH keys", "ERROR", f"Failed to check SSH keys: {str(e)}")
+    
     def check_hosts_file(self):
         """Check /etc/hosts file and identify non-standard entries"""
         hosts_path = "/etc/hosts"
@@ -673,6 +763,98 @@ class DevEnvChecker:
                 hostnames_str = hostnames_str[:45] + '...'
             print(f"{entry['ip']:<20} {hostnames_str:<50}")
     
+    def print_ssh_keys_details(self):
+        """Print detailed SSH keys table"""
+        ssh_dir = os.path.expanduser("~/.ssh")
+        
+        if not os.path.exists(ssh_dir) or not os.access(ssh_dir, os.R_OK):
+            return
+        
+        try:
+            found_keys = []
+            
+            # Get all files in .ssh directory
+            ssh_files = os.listdir(ssh_dir)
+            
+            # Find potential private key files (no .pub extension)
+            private_key_files = [f for f in ssh_files if not f.endswith('.pub') and not f.startswith('.') 
+                               and os.path.isfile(os.path.join(ssh_dir, f))]
+            
+            for key_file in private_key_files:
+                key_path = os.path.join(ssh_dir, key_file)
+                pub_path = key_path + '.pub'
+                
+                # Only include keys that have corresponding .pub files
+                if os.path.exists(pub_path):
+                    try:
+                        # Try to determine key type by reading the public key
+                        with open(pub_path, 'r') as f:
+                            pub_content = f.read().strip()
+                        
+                        key_type = "Unknown"
+                        key_details = ""
+                        
+                        if pub_content.startswith('ssh-rsa '):
+                            key_type = "RSA"
+                            # Extract key size for RSA keys
+                            try:
+                                import base64
+                                key_data = pub_content.split()[1]
+                                decoded = base64.b64decode(key_data)
+                                # RSA key size extraction is complex, simplified here
+                                key_details = "RSA key"
+                            except:
+                                key_details = "RSA key"
+                        elif pub_content.startswith('ssh-dss '):
+                            key_type = "DSA"
+                            key_details = "DSA key"
+                        elif pub_content.startswith('ecdsa-sha2-'):
+                            key_type = "ECDSA"
+                            if 'nistp256' in pub_content:
+                                key_details = "ECDSA 256-bit"
+                            elif 'nistp384' in pub_content:
+                                key_details = "ECDSA 384-bit"
+                            elif 'nistp521' in pub_content:
+                                key_details = "ECDSA 521-bit"
+                            else:
+                                key_details = "ECDSA key"
+                        elif pub_content.startswith('ssh-ed25519 '):
+                            key_type = "ED25519"
+                            key_details = "ED25519 256-bit"
+                        
+                        # Get file modification time for creation info
+                        import time
+                        mtime = os.path.getmtime(key_path)
+                        created = time.strftime('%Y-%m-%d', time.localtime(mtime))
+                        
+                        found_keys.append({
+                            'name': key_file,
+                            'type': key_type,
+                            'details': key_details,
+                            'created': created,
+                            'has_public': True
+                        })
+                        
+                    except Exception:
+                        # Skip problematic keys silently in details view
+                        continue
+            
+            if found_keys:
+                print(f"\n{Colors.BOLD}🔐 SSH Keys Details{Colors.END}")
+                print("=" * 100)
+                print(f"{Colors.BOLD}{'Key Name':<25} {'Type':<15} {'Details':<20} {'Created':<15} {'Public Key':<10}{Colors.END}")
+                print("-" * 100)
+                
+                # Sort by key name for better readability
+                found_keys.sort(key=lambda x: x['name'])
+                
+                for key in found_keys:
+                    public_status = "✅ Yes" if key['has_public'] else "❌ No"
+                    print(f"{key['name']:<25} {key['type']:<15} {key['details']:<20} {key['created']:<15} {public_status:<10}")
+            
+        except Exception as e:
+            print(f"Error displaying SSH keys details: {e}")
+    
     def run_all_checks(self):
         """Run all environment checks"""
         print(f"{Colors.BOLD}🔍 Local Development Environment Check{Colors.END}\n")
@@ -685,6 +867,7 @@ class DevEnvChecker:
         print("Checking SSH configuration...")
         self.check_ssh_config()
         self.check_ssh_known_hosts()
+        self.check_ssh_keys()
         
         # Command line tools
         print("Checking command line tools...")
@@ -774,6 +957,7 @@ def main():
         # Print detailed tables
         checker.print_hosts_details()
         checker.print_ssh_config_details()
+        checker.print_ssh_keys_details()
         checker.print_known_hosts_details()
         
     except KeyboardInterrupt:
