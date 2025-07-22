@@ -193,26 +193,12 @@ class DevEnvChecker:
                         key, value = line.split(None, 1)
                         global_settings[key.lower()] = value
             
-            # Create summary
-            size = os.path.getsize(ssh_config_path)
-            summary_parts = [f"Size: {size} bytes"]
-            
+            # Create simple summary - just host count
             if hosts:
-                if len(hosts) <= 5:  # Show host names if reasonable number
-                    host_list = ', '.join(hosts)
-                    summary_parts.append(f"Hosts: {len(hosts)} ({host_list})")
-                else:
-                    summary_parts.append(f"Hosts: {len(hosts)}")
+                summary = f"Hosts: {len(hosts)}"
+            else:
+                summary = "No hosts configured"
             
-            if global_settings:
-                key_settings = []
-                for key in ['serveraliveinterval', 'compression', 'forwardagent']:
-                    if key in global_settings:
-                        key_settings.append(f"{key.title()}: {global_settings[key]}")
-                if key_settings:
-                    summary_parts.append(f"Settings: {', '.join(key_settings)}")
-            
-            summary = ", ".join(summary_parts)
             self.add_result("SSH", "SSH config", "OK", summary)
             
         except Exception as e:
@@ -258,33 +244,137 @@ class DevEnvChecker:
                     # Count key types
                     key_types[key_type] = key_types.get(key_type, 0) + 1
             
-            # Create summary
-            size = os.path.getsize(known_hosts_path)
-            summary_parts = [f"Size: {size} bytes", f"Entries: {len(lines)}"]
+            # Create simple summary - just entry count
+            non_empty_lines = [line for line in lines if line.strip() and not line.strip().startswith('#')]
+            summary = f"Entries: {len(non_empty_lines)}"
             
-            if hosts:
-                visible_hosts = [h for h in hosts if h != '[hashed]']
-                hashed_count = len([h for h in hosts if h == '[hashed]'])
-                
-                if visible_hosts:
-                    if len(visible_hosts) <= 10:  # Show host names if reasonable number
-                        host_list = ', '.join(sorted(visible_hosts))
-                        summary_parts.append(f"Hosts: {len(visible_hosts)} ({host_list})")
-                    else:
-                        summary_parts.append(f"Hosts: {len(visible_hosts)}")
-                        
-                if hashed_count > 0:
-                    summary_parts.append(f"Hashed: {hashed_count}")
-            
-            if key_types:
-                key_summary = ', '.join([f"{k}: {v}" for k, v in key_types.items()])
-                summary_parts.append(f"Keys: {key_summary}")
-            
-            summary = ", ".join(summary_parts)
             self.add_result("SSH", "Known hosts", "OK", summary)
             
         except Exception as e:
             self.add_result("SSH", "Known hosts", "ERROR", f"Failed to parse: {str(e)}")
+    
+    def print_ssh_config_details(self):
+        """Print detailed SSH configuration table"""
+        ssh_config_path = os.path.expanduser("~/.ssh/config")
+        
+        if not os.path.exists(ssh_config_path):
+            return
+        
+        try:
+            with open(ssh_config_path, 'r') as f:
+                content = f.read()
+            
+            # Parse SSH config for detailed host information
+            lines = content.split('\n')
+            hosts_config = {}
+            current_host = None
+            global_settings = {}
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                if line.lower().startswith('host '):
+                    current_host = line.split(None, 1)[1]
+                    if current_host not in hosts_config:
+                        hosts_config[current_host] = {}
+                elif current_host and ' ' in line:
+                    key, value = line.split(None, 1)
+                    hosts_config[current_host][key.lower()] = value
+                elif current_host is None and ' ' in line:  # Global settings
+                    key, value = line.split(None, 1)
+                    global_settings[key.lower()] = value
+            
+            if hosts_config:
+                print(f"\n{Colors.BOLD}🔧 SSH Configuration Details{Colors.END}")
+                print("=" * 100)
+                print(f"{Colors.BOLD}{'Host':<20} {'Hostname':<25} {'User':<15} {'Port':<8} {'Other Settings':<30}{Colors.END}")
+                print("-" * 100)
+                
+                for host, config in hosts_config.items():
+                    if host == '*':  # Skip global patterns
+                        continue
+                    
+                    hostname = config.get('hostname', '')
+                    user = config.get('user', '')
+                    port = config.get('port', '22')
+                    
+                    # Collect other interesting settings
+                    other_settings = []
+                    for key in ['identityfile', 'forwardagent', 'compression']:
+                        if key in config:
+                            value = config[key]
+                            if key == 'identityfile':
+                                value = value.split('/')[-1]  # Just filename
+                            other_settings.append(f"{key.title()}: {value}")
+                    
+                    other_str = ', '.join(other_settings[:2])  # Limit to avoid overflow
+                    if len(other_settings) > 2:
+                        other_str += '...'
+                    
+                    print(f"{host:<20} {hostname:<25} {user:<15} {port:<8} {other_str:<30}")
+            
+        except Exception as e:
+            print(f"Error parsing SSH config: {e}")
+    
+    def print_known_hosts_details(self):
+        """Print detailed known hosts table"""
+        known_hosts_path = os.path.expanduser("~/.ssh/known_hosts")
+        
+        if not os.path.exists(known_hosts_path):
+            return
+        
+        try:
+            with open(known_hosts_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Parse known hosts for detailed information
+            host_entries = []
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split()
+                if len(parts) >= 3:
+                    host_part = parts[0]
+                    key_type = parts[1]
+                    # Extract hostname (handle hashed hosts)
+                    if host_part.startswith('|1|'):
+                        display_host = '[hashed]'
+                    else:
+                        # Handle comma-separated hosts and ports
+                        hosts = []
+                        for host in host_part.split(','):
+                            # Remove port numbers and brackets
+                            clean_host = host.split(':')[0].strip('[]')
+                            if clean_host:
+                                hosts.append(clean_host)
+                        display_host = ', '.join(hosts[:2])  # Show max 2 hosts
+                        if len(hosts) > 2:
+                            display_host += f' (+{len(hosts)-2} more)'
+                    
+                    host_entries.append({
+                        'host': display_host,
+                        'key_type': key_type
+                    })
+            
+            if host_entries:
+                print(f"\n{Colors.BOLD}🔑 SSH Known Hosts Details{Colors.END}")
+                print("=" * 65)
+                print(f"{Colors.BOLD}{'Host/IP':<40} {'Key Type':<25}{Colors.END}")
+                print("-" * 65)
+                
+                # Sort by host for better readability
+                host_entries.sort(key=lambda x: x['host'])
+                
+                for entry in host_entries:
+                    print(f"{entry['host']:<40} {entry['key_type']:<25}")
+            
+        except Exception as e:
+            print(f"Error parsing known hosts: {e}")
     
     def run_all_checks(self):
         """Run all environment checks"""
@@ -384,6 +474,11 @@ def main():
     try:
         checker.run_all_checks()
         checker.print_results()
+        
+        # Print detailed SSH tables
+        checker.print_ssh_config_details()
+        checker.print_known_hosts_details()
+        
     except KeyboardInterrupt:
         print(f"\n{Colors.YELLOW}Check interrupted by user{Colors.END}")
         sys.exit(1)
