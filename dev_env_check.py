@@ -89,15 +89,123 @@ class DevEnvChecker:
         except Exception as e:
             self.add_result(category, f"{description} (version)", "ERROR", str(e))
     
-    def check_aws_credentials(self):
-        """Check AWS credentials and connectivity"""
-        # Check credentials file
-        aws_creds = "~/.aws/credentials"
-        self.check_file_exists(aws_creds, "AWS", "Credentials file")
+    def check_aws_credentials_file(self):
+        """Analyze AWS credentials file for profiles"""
+        aws_creds_path = os.path.expanduser("~/.aws/credentials")
         
-        # Check config file
-        aws_config = "~/.aws/config"
-        self.check_file_exists(aws_config, "AWS", "Config file")
+        if not os.path.exists(aws_creds_path):
+            self.add_result("AWS", "Credentials file", "MISSING", f"Path: {aws_creds_path}")
+            return
+        
+        try:
+            with open(aws_creds_path, 'r') as f:
+                content = f.read()
+            
+            # Parse profiles from credentials file
+            profiles = []
+            lines = content.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('[') and line.endswith(']'):
+                    profile_name = line[1:-1]  # Remove brackets
+                    profiles.append(profile_name)
+            
+            # Create summary
+            if profiles:
+                if len(profiles) == 1:
+                    summary = f"Profiles: 1 ({profiles[0]})"
+                elif len(profiles) <= 5:
+                    profile_list = ', '.join(profiles)
+                    summary = f"Profiles: {len(profiles)} ({profile_list})"
+                else:
+                    summary = f"Profiles: {len(profiles)}"
+                
+                self.add_result("AWS", "Credentials file", "OK", summary)
+            else:
+                self.add_result("AWS", "Credentials file", "WARNING", "No profiles found")
+            
+        except PermissionError:
+            self.add_result("AWS", "Credentials file", "ERROR", "Permission denied")
+        except Exception as e:
+            self.add_result("AWS", "Credentials file", "ERROR", f"Failed to parse: {str(e)}")
+    
+    def check_aws_config_file(self):
+        """Analyze AWS config file for regions and settings"""
+        aws_config_path = os.path.expanduser("~/.aws/config")
+        
+        if not os.path.exists(aws_config_path):
+            self.add_result("AWS", "Config file", "MISSING", f"Path: {aws_config_path}")
+            return
+        
+        try:
+            with open(aws_config_path, 'r') as f:
+                content = f.read()
+            
+            # Parse config settings
+            lines = content.split('\n')
+            default_region = None
+            default_output = None
+            regions = set()
+            profiles = []
+            
+            current_profile = None
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                if line.startswith('[') and line.endswith(']'):
+                    profile_name = line[1:-1]  # Remove brackets
+                    if profile_name.startswith('profile '):
+                        profile_name = profile_name[8:]  # Remove 'profile ' prefix
+                    current_profile = profile_name
+                    profiles.append(profile_name)
+                elif '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    if key == 'region':
+                        regions.add(value)
+                        if current_profile == 'default' or default_region is None:
+                            default_region = value
+                    elif key == 'output' and current_profile == 'default':
+                        default_output = value
+            
+            # Create summary
+            summary_parts = []
+            
+            if default_region:
+                summary_parts.append(f"Region: {default_region}")
+            
+            if default_output:
+                summary_parts.append(f"Output: {default_output}")
+            
+            if len(regions) > 1:
+                summary_parts.append(f"Multiple regions: {len(regions)}")
+            
+            if len(profiles) > 1:
+                summary_parts.append(f"Profiles: {len(profiles)}")
+            
+            if summary_parts:
+                summary = ", ".join(summary_parts)
+                self.add_result("AWS", "Config file", "OK", summary)
+            else:
+                self.add_result("AWS", "Config file", "OK", "Basic configuration")
+            
+        except PermissionError:
+            self.add_result("AWS", "Config file", "ERROR", "Permission denied")
+        except Exception as e:
+            self.add_result("AWS", "Config file", "ERROR", f"Failed to parse: {str(e)}")
+    
+    def check_aws_credentials(self):
+        """Check AWS credentials and connectivity with intelligent analysis"""
+        # Analyze credentials file
+        self.check_aws_credentials_file()
+        
+        # Analyze config file
+        self.check_aws_config_file()
         
         # Test AWS CLI connectivity
         if self.check_command_exists("aws", "AWS", "AWS CLI"):
@@ -115,11 +223,63 @@ class DevEnvChecker:
             except Exception as e:
                 self.add_result("AWS", "API connectivity", "ERROR", str(e))
     
+    def check_gcp_credentials_file(self):
+        """Analyze GCP application credentials file"""
+        gcp_creds_path = os.path.expanduser("~/.config/gcloud/application_default_credentials.json")
+        
+        if not os.path.exists(gcp_creds_path):
+            self.add_result("GCP", "Application credentials", "MISSING", f"Path: {gcp_creds_path}")
+            return
+        
+        try:
+            with open(gcp_creds_path, 'r') as f:
+                creds_data = json.load(f)
+            
+            # Extract useful information
+            summary_parts = []
+            
+            # Credential type
+            cred_type = creds_data.get('type', 'unknown')
+            if cred_type == 'authorized_user':
+                summary_parts.append("Type: User")
+            elif cred_type == 'service_account':
+                summary_parts.append("Type: Service Account")
+            else:
+                summary_parts.append(f"Type: {cred_type}")
+            
+            # Project ID (quota_project_id is the active project)
+            project_id = creds_data.get('quota_project_id') or creds_data.get('project_id')
+            if project_id:
+                summary_parts.append(f"Project: {project_id}")
+            
+            # Universe domain (for specialized GCP environments)
+            universe = creds_data.get('universe_domain', 'googleapis.com')
+            if universe != 'googleapis.com':
+                summary_parts.append(f"Domain: {universe}")
+            
+            # Service account email (if service account)
+            if cred_type == 'service_account':
+                client_email = creds_data.get('client_email')
+                if client_email:
+                    summary_parts.append(f"SA: {client_email.split('@')[0]}")
+            
+            if summary_parts:
+                summary = ", ".join(summary_parts)
+                self.add_result("GCP", "Application credentials", "OK", summary)
+            else:
+                self.add_result("GCP", "Application credentials", "OK", "Valid credentials")
+            
+        except json.JSONDecodeError:
+            self.add_result("GCP", "Application credentials", "ERROR", "Invalid JSON format")
+        except PermissionError:
+            self.add_result("GCP", "Application credentials", "ERROR", "Permission denied")
+        except Exception as e:
+            self.add_result("GCP", "Application credentials", "ERROR", f"Failed to parse: {str(e)}")
+    
     def check_gcp_credentials(self):
-        """Check Google Cloud credentials and connectivity"""
-        # Check default credentials
-        gcp_creds = "~/.config/gcloud/application_default_credentials.json"
-        self.check_file_exists(gcp_creds, "GCP", "Application credentials")
+        """Check Google Cloud credentials and connectivity with intelligent analysis"""
+        # Analyze application credentials
+        self.check_gcp_credentials_file()
         
         # Test gcloud connectivity
         if self.check_command_exists("gcloud", "GCP", "gcloud CLI"):
