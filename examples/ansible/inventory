@@ -1,0 +1,30 @@
+# Example Ansible Inventory File
+# Copy this to ~/ansible/inventory to use it
+#
+# This is a basic inventory file for local development
+
+[local]
+localhost ansible_connection=local
+
+[development]
+# Add your development servers here
+# dev-server-1 ansible_host=192.168.1.10 ansible_user=ubuntu
+# dev-server-2 ansible_host=192.168.1.11 ansible_user=ubuntu
+
+[staging]
+# Add your staging servers here
+# staging-server ansible_host=staging.example.com ansible_user=deploy
+
+[production]
+# Add your production servers here
+# prod-server-1 ansible_host=prod1.example.com ansible_user=deploy
+# prod-server-2 ansible_host=prod2.example.com ansible_user=deploy
+
+[webservers:children]
+development
+staging
+production
+
+[all:vars]
+# Global variables for all hosts
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'

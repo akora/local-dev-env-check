@@ -1,0 +1,17 @@
+# Example DigitalOcean doctl configuration
+# Copy this to ~/.config/doctl/config.yaml to use it
+#
+# You'll need to replace YOUR_API_TOKEN with your actual DigitalOcean API token
+# Get your token from: https://cloud.digitalocean.com/account/api/tokens
+
+access-token: YOUR_API_TOKEN
+output: table
+context: default
+
+# Optional: Set default region and size for droplets
+# default-region: nyc1
+# default-size: s-1vcpu-1gb
+
+# Optional: SSH key settings
+# ssh-key-path: ~/.ssh/id_rsa
+# ssh-user: root
