@@ -302,10 +302,9 @@ class DevEnvChecker:
                 self.add_result("GCP", "Authentication", "ERROR", str(e))
     
     def check_digitalocean_credentials(self):
-        """Check DigitalOcean credentials"""
-        # Check for doctl config
-        do_config = "~/.config/doctl/config.yaml"
-        self.check_file_exists(do_config, "DigitalOcean", "Config file")
+        """Check DigitalOcean credentials with smart detection"""
+        # Smart detection for doctl config
+        self.check_doctl_config_smart()
         
         # Test doctl connectivity
         if self.check_command_exists("doctl", "DigitalOcean", "doctl CLI"):
@@ -320,6 +319,48 @@ class DevEnvChecker:
                 self.add_result("DigitalOcean", "API connectivity", "ERROR", "Request timeout")
             except Exception as e:
                 self.add_result("DigitalOcean", "API connectivity", "ERROR", str(e))
+    
+    def check_ansible_config_smart(self):
+        """Smart detection for Ansible configuration files"""
+        # Check project-local first (highest priority)
+        if os.path.exists('./ansible.cfg'):
+            self.add_result("Ansible", "Config file", "OK", "Project: ./ansible.cfg")
+        # Check user home directory
+        elif os.path.exists(os.path.expanduser('~/.ansible.cfg')):
+            self.add_result("Ansible", "Config file", "OK", "User: ~/.ansible.cfg")
+        else:
+            self.add_result("Ansible", "Config file", "MISSING", "No project or user config found")
+        
+        # Check system-wide config (separate check)
+        if os.path.exists('/etc/ansible/ansible.cfg'):
+            self.add_result("Ansible", "Global config", "OK", "System: /etc/ansible/ansible.cfg")
+        else:
+            self.add_result("Ansible", "Global config", "MISSING", "Path: /etc/ansible/ansible.cfg")
+    
+    def check_doctl_config_smart(self):
+        """Smart detection for DigitalOcean doctl configuration files"""
+        # Project-specific locations to check
+        project_configs = [
+            './doctl.yaml',
+            './.doctl/config.yaml',
+            './config/doctl.yaml'
+        ]
+        
+        # Check for project-specific config first
+        project_found = False
+        for config_path in project_configs:
+            if os.path.exists(config_path):
+                self.add_result("DigitalOcean", "Config file", "OK", f"Project: {config_path}")
+                project_found = True
+                break
+        
+        # Check global config if no project config found
+        if not project_found:
+            global_config = os.path.expanduser('~/.config/doctl/config.yaml')
+            if os.path.exists(global_config):
+                self.add_result("DigitalOcean", "Config file", "OK", "Global: ~/.config/doctl/config.yaml")
+            else:
+                self.add_result("DigitalOcean", "Config file", "MISSING", "No project or global config found")
     
     def check_ssh_config(self):
         """Check and parse SSH configuration"""
@@ -660,8 +701,7 @@ class DevEnvChecker:
         
         # Ansible specific checks
         print("Checking Ansible configuration...")
-        self.check_file_exists("~/.ansible.cfg", "Ansible", "Config file")
-        self.check_file_exists("/etc/ansible/ansible.cfg", "Ansible", "Global config")
+        self.check_ansible_config_smart()
         
         # Terraform specific checks
         print("Checking Terraform configuration...")
