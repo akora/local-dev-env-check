@@ -160,6 +160,132 @@ class DevEnvChecker:
             except Exception as e:
                 self.add_result("DigitalOcean", "API connectivity", "ERROR", str(e))
     
+    def check_ssh_config(self):
+        """Check and parse SSH configuration"""
+        ssh_config_path = os.path.expanduser("~/.ssh/config")
+        
+        if not os.path.exists(ssh_config_path):
+            self.add_result("SSH", "SSH config", "MISSING", f"Path: {ssh_config_path}")
+            return
+        
+        try:
+            with open(ssh_config_path, 'r') as f:
+                content = f.read()
+            
+            # Parse SSH config for key settings
+            lines = content.split('\n')
+            hosts = []
+            global_settings = {}
+            current_host = None
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                if line.lower().startswith('host '):
+                    host_name = line.split(None, 1)[1]
+                    if host_name != '*':  # Skip global host patterns for counting
+                        hosts.append(host_name)
+                    current_host = host_name
+                elif current_host is None:  # Global settings
+                    if ' ' in line:
+                        key, value = line.split(None, 1)
+                        global_settings[key.lower()] = value
+            
+            # Create summary
+            size = os.path.getsize(ssh_config_path)
+            summary_parts = [f"Size: {size} bytes"]
+            
+            if hosts:
+                if len(hosts) <= 5:  # Show host names if reasonable number
+                    host_list = ', '.join(hosts)
+                    summary_parts.append(f"Hosts: {len(hosts)} ({host_list})")
+                else:
+                    summary_parts.append(f"Hosts: {len(hosts)}")
+            
+            if global_settings:
+                key_settings = []
+                for key in ['serveraliveinterval', 'compression', 'forwardagent']:
+                    if key in global_settings:
+                        key_settings.append(f"{key.title()}: {global_settings[key]}")
+                if key_settings:
+                    summary_parts.append(f"Settings: {', '.join(key_settings)}")
+            
+            summary = ", ".join(summary_parts)
+            self.add_result("SSH", "SSH config", "OK", summary)
+            
+        except Exception as e:
+            self.add_result("SSH", "SSH config", "ERROR", f"Failed to parse: {str(e)}")
+    
+    def check_ssh_known_hosts(self):
+        """Check and parse SSH known hosts"""
+        known_hosts_path = os.path.expanduser("~/.ssh/known_hosts")
+        
+        if not os.path.exists(known_hosts_path):
+            self.add_result("SSH", "Known hosts", "MISSING", f"Path: {known_hosts_path}")
+            return
+        
+        try:
+            with open(known_hosts_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Parse known hosts
+            hosts = set()
+            key_types = {}
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = line.split()
+                if len(parts) >= 3:
+                    host_part = parts[0]
+                    key_type = parts[1]
+                    
+                    # Extract hostname (handle hashed hosts)
+                    if host_part.startswith('|1|'):
+                        hosts.add('[hashed]')
+                    else:
+                        # Handle comma-separated hosts and ports
+                        for host in host_part.split(','):
+                            # Remove port numbers and brackets
+                            clean_host = host.split(':')[0].strip('[]')
+                            if clean_host:
+                                hosts.add(clean_host)
+                    
+                    # Count key types
+                    key_types[key_type] = key_types.get(key_type, 0) + 1
+            
+            # Create summary
+            size = os.path.getsize(known_hosts_path)
+            summary_parts = [f"Size: {size} bytes", f"Entries: {len(lines)}"]
+            
+            if hosts:
+                visible_hosts = [h for h in hosts if h != '[hashed]']
+                hashed_count = len([h for h in hosts if h == '[hashed]'])
+                
+                if visible_hosts:
+                    if len(visible_hosts) <= 10:  # Show host names if reasonable number
+                        host_list = ', '.join(sorted(visible_hosts))
+                        summary_parts.append(f"Hosts: {len(visible_hosts)} ({host_list})")
+                    else:
+                        summary_parts.append(f"Hosts: {len(visible_hosts)}")
+                        
+                if hashed_count > 0:
+                    summary_parts.append(f"Hashed: {hashed_count}")
+            
+            if key_types:
+                key_summary = ', '.join([f"{k}: {v}" for k, v in key_types.items()])
+                summary_parts.append(f"Keys: {key_summary}")
+            
+            summary = ", ".join(summary_parts)
+            self.add_result("SSH", "Known hosts", "OK", summary)
+            
+        except Exception as e:
+            self.add_result("SSH", "Known hosts", "ERROR", f"Failed to parse: {str(e)}")
+    
     def run_all_checks(self):
         """Run all environment checks"""
         print(f"{Colors.BOLD}🔍 Local Development Environment Check{Colors.END}\n")
@@ -167,8 +293,11 @@ class DevEnvChecker:
         # File checks
         print("Checking system files...")
         self.check_file_exists("/etc/hosts", "System", "/etc/hosts")
-        self.check_file_exists("~/.ssh/config", "SSH", "SSH config")
-        self.check_file_exists("~/.ssh/known_hosts", "SSH", "Known hosts")
+        
+        # SSH configuration checks
+        print("Checking SSH configuration...")
+        self.check_ssh_config()
+        self.check_ssh_known_hosts()
         
         # Command line tools
         print("Checking command line tools...")
@@ -203,7 +332,11 @@ class DevEnvChecker:
     def print_results(self):
         """Print results in a tabular format"""
         print(f"\n{Colors.BOLD}📊 Results Summary{Colors.END}")
-        print("=" * 80)
+        print("=" * 120)
+        
+        # Table headers
+        print(f"{Colors.BOLD}{'Category':<15} {'Item':<35} {'Status':<12} {'Details':<50}{Colors.END}")
+        print("-" * 120)
         
         # Group results by category
         categories = {}
@@ -213,15 +346,24 @@ class DevEnvChecker:
                 categories[cat] = []
             categories[cat].append(result)
         
-        # Print each category
+        # Print each category in table format
         for category, items in categories.items():
-            print(f"\n{Colors.BOLD}{category}{Colors.END}")
-            print("-" * len(category))
-            
-            for item in items:
+            for i, item in enumerate(items):
+                # Show category name only for first item in each category
+                cat_display = category if i == 0 else ""
+                
                 status_str = self.print_status(item['status'])
-                details = f" ({item['details']})" if item['details'] else ""
-                print(f"  {item['item']:<30} {status_str}{details}")
+                details = item['details'] if item['details'] else ""
+                
+                # Truncate long details to fit in column
+                if len(details) > 47:
+                    details = details[:44] + "..."
+                
+                print(f"{cat_display:<15} {item['item']:<35} {status_str:<20} {details:<50}")
+            
+            # Add separator between categories
+            if category != list(categories.keys())[-1]:  # Not the last category
+                print("-" * 120)
         
         # Summary statistics
         total = len(self.results)
