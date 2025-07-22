@@ -468,55 +468,66 @@ class DevEnvChecker:
             return
         
         try:
-            # Common SSH key patterns
-            key_patterns = [
-                'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519',
-                'id_rsa_*', 'id_dsa_*', 'id_ecdsa_*', 'id_ed25519_*'
-            ]
-            
             found_keys = []
             warnings = []
             
-            # Get all files in .ssh directory
-            try:
-                ssh_files = os.listdir(ssh_dir)
-            except PermissionError as e:
-                self.add_result("SSH Keys", "SSH directory", "WARNING", f"Permission denied: {str(e)}")
-                return
-            
-            # Find potential private key files (no .pub extension)
-            private_key_files = [f for f in ssh_files if not f.endswith('.pub') and not f.startswith('.') 
-                               and os.path.isfile(os.path.join(ssh_dir, f))]
-            
-            for key_file in private_key_files:
-                key_path = os.path.join(ssh_dir, key_file)
-                pub_path = key_path + '.pub'
+            def scan_directory(directory, relative_path="", depth=0, max_depth=3):
+                """Recursively scan directory for SSH keys with depth limit"""
+                if depth > max_depth:
+                    return
                 
-                # Only include keys that have corresponding .pub files
-                if os.path.exists(pub_path):
-                    try:
-                        # Try to determine key type by reading the public key
-                        with open(pub_path, 'r') as f:
-                            pub_content = f.read().strip()
+                try:
+                    items = os.listdir(directory)
+                except PermissionError as e:
+                    warnings.append(f"Permission denied: {relative_path or 'root'}")
+                    return
+                
+                for item in items:
+                    if item.startswith('.'):
+                        continue
                         
-                        key_type = "Unknown"
-                        if pub_content.startswith('ssh-rsa '):
-                            key_type = "RSA"
-                        elif pub_content.startswith('ssh-dss '):
-                            key_type = "DSA"
-                        elif pub_content.startswith('ecdsa-sha2-'):
-                            key_type = "ECDSA"
-                        elif pub_content.startswith('ssh-ed25519 '):
-                            key_type = "ED25519"
-                        
-                        found_keys.append({
-                            'name': key_file,
-                            'type': key_type,
-                            'has_public': True
-                        })
-                        
-                    except Exception as e:
-                        warnings.append(f"Could not read {key_file}: {str(e)}")
+                    item_path = os.path.join(directory, item)
+                    item_relative = os.path.join(relative_path, item) if relative_path else item
+                    
+                    if os.path.isfile(item_path):
+                        # Check if it's a potential private key (no .pub extension)
+                        if not item.endswith('.pub'):
+                            pub_path = item_path + '.pub'
+                            
+                            # Only include keys that have corresponding .pub files
+                            if os.path.exists(pub_path):
+                                try:
+                                    # Try to determine key type by reading the public key
+                                    with open(pub_path, 'r') as f:
+                                        pub_content = f.read().strip()
+                                    
+                                    key_type = "Unknown"
+                                    if pub_content.startswith('ssh-rsa '):
+                                        key_type = "RSA"
+                                    elif pub_content.startswith('ssh-dss '):
+                                        key_type = "DSA"
+                                    elif pub_content.startswith('ecdsa-sha2-'):
+                                        key_type = "ECDSA"
+                                    elif pub_content.startswith('ssh-ed25519 '):
+                                        key_type = "ED25519"
+                                    
+                                    found_keys.append({
+                                        'name': item,
+                                        'path': item_relative,
+                                        'directory': relative_path or ".",
+                                        'type': key_type,
+                                        'has_public': True
+                                    })
+                                    
+                                except Exception as e:
+                                    warnings.append(f"Could not read {item_relative}: {str(e)}")
+                    
+                    elif os.path.isdir(item_path) and depth < max_depth:
+                        # Recursively scan subdirectory
+                        scan_directory(item_path, item_relative, depth + 1, max_depth)
+            
+            # Start scanning from the main .ssh directory
+            scan_directory(ssh_dir)
             
             # Create summary
             if found_keys:
@@ -764,7 +775,7 @@ class DevEnvChecker:
             print(f"{entry['ip']:<20} {hostnames_str:<50}")
     
     def print_ssh_keys_details(self):
-        """Print detailed SSH keys table"""
+        """Print detailed SSH keys table grouped by directory"""
         ssh_dir = os.path.expanduser("~/.ssh")
         
         if not os.path.exists(ssh_dir) or not os.access(ssh_dir, os.R_OK):
@@ -773,84 +784,106 @@ class DevEnvChecker:
         try:
             found_keys = []
             
-            # Get all files in .ssh directory
-            ssh_files = os.listdir(ssh_dir)
-            
-            # Find potential private key files (no .pub extension)
-            private_key_files = [f for f in ssh_files if not f.endswith('.pub') and not f.startswith('.') 
-                               and os.path.isfile(os.path.join(ssh_dir, f))]
-            
-            for key_file in private_key_files:
-                key_path = os.path.join(ssh_dir, key_file)
-                pub_path = key_path + '.pub'
+            def scan_directory(directory, relative_path="", depth=0, max_depth=3):
+                """Recursively scan directory for SSH keys with depth limit"""
+                if depth > max_depth:
+                    return
                 
-                # Only include keys that have corresponding .pub files
-                if os.path.exists(pub_path):
-                    try:
-                        # Try to determine key type by reading the public key
-                        with open(pub_path, 'r') as f:
-                            pub_content = f.read().strip()
-                        
-                        key_type = "Unknown"
-                        key_details = ""
-                        
-                        if pub_content.startswith('ssh-rsa '):
-                            key_type = "RSA"
-                            # Extract key size for RSA keys
-                            try:
-                                import base64
-                                key_data = pub_content.split()[1]
-                                decoded = base64.b64decode(key_data)
-                                # RSA key size extraction is complex, simplified here
-                                key_details = "RSA key"
-                            except:
-                                key_details = "RSA key"
-                        elif pub_content.startswith('ssh-dss '):
-                            key_type = "DSA"
-                            key_details = "DSA key"
-                        elif pub_content.startswith('ecdsa-sha2-'):
-                            key_type = "ECDSA"
-                            if 'nistp256' in pub_content:
-                                key_details = "ECDSA 256-bit"
-                            elif 'nistp384' in pub_content:
-                                key_details = "ECDSA 384-bit"
-                            elif 'nistp521' in pub_content:
-                                key_details = "ECDSA 521-bit"
-                            else:
-                                key_details = "ECDSA key"
-                        elif pub_content.startswith('ssh-ed25519 '):
-                            key_type = "ED25519"
-                            key_details = "ED25519 256-bit"
-                        
-                        # Get file modification time for creation info
-                        import time
-                        mtime = os.path.getmtime(key_path)
-                        created = time.strftime('%Y-%m-%d', time.localtime(mtime))
-                        
-                        found_keys.append({
-                            'name': key_file,
-                            'type': key_type,
-                            'details': key_details,
-                            'created': created,
-                            'has_public': True
-                        })
-                        
-                    except Exception:
-                        # Skip problematic keys silently in details view
+                try:
+                    items = os.listdir(directory)
+                except PermissionError:
+                    return
+                
+                for item in items:
+                    if item.startswith('.'):
                         continue
+                        
+                    item_path = os.path.join(directory, item)
+                    item_relative = os.path.join(relative_path, item) if relative_path else item
+                    
+                    if os.path.isfile(item_path):
+                        # Check if it's a potential private key (no .pub extension)
+                        if not item.endswith('.pub'):
+                            pub_path = item_path + '.pub'
+                            
+                            # Only include keys that have corresponding .pub files
+                            if os.path.exists(pub_path):
+                                try:
+                                    # Try to determine key type by reading the public key
+                                    with open(pub_path, 'r') as f:
+                                        pub_content = f.read().strip()
+                                    
+                                    key_type = "Unknown"
+                                    key_details = ""
+                                    
+                                    if pub_content.startswith('ssh-rsa '):
+                                        key_type = "RSA"
+                                        key_details = "RSA key"
+                                    elif pub_content.startswith('ssh-dss '):
+                                        key_type = "DSA"
+                                        key_details = "DSA key"
+                                    elif pub_content.startswith('ecdsa-sha2-'):
+                                        key_type = "ECDSA"
+                                        if 'nistp256' in pub_content:
+                                            key_details = "ECDSA 256-bit"
+                                        elif 'nistp384' in pub_content:
+                                            key_details = "ECDSA 384-bit"
+                                        elif 'nistp521' in pub_content:
+                                            key_details = "ECDSA 521-bit"
+                                        else:
+                                            key_details = "ECDSA key"
+                                    elif pub_content.startswith('ssh-ed25519 '):
+                                        key_type = "ED25519"
+                                        key_details = "ED25519 256-bit"
+                                    
+                                    # Get file modification time for creation info
+                                    import time
+                                    mtime = os.path.getmtime(item_path)
+                                    created = time.strftime('%Y-%m-%d', time.localtime(mtime))
+                                    
+                                    found_keys.append({
+                                        'name': item,
+                                        'path': item_relative,
+                                        'directory': relative_path or ".",
+                                        'type': key_type,
+                                        'details': key_details,
+                                        'created': created,
+                                        'has_public': True
+                                    })
+                                    
+                                except Exception:
+                                    # Skip problematic keys silently in details view
+                                    continue
+                    
+                    elif os.path.isdir(item_path) and depth < max_depth:
+                        # Recursively scan subdirectory
+                        scan_directory(item_path, item_relative, depth + 1, max_depth)
+            
+            # Start scanning from the main .ssh directory
+            scan_directory(ssh_dir)
             
             if found_keys:
                 print(f"\n{Colors.BOLD}🔐 SSH Keys Details{Colors.END}")
-                print("=" * 100)
-                print(f"{Colors.BOLD}{'Key Name':<25} {'Type':<15} {'Details':<20} {'Created':<15} {'Public Key':<10}{Colors.END}")
-                print("-" * 100)
+                print("=" * 110)
+                print(f"{Colors.BOLD}{'Directory':<20} {'Key Name':<25} {'Type':<15} {'Details':<20} {'Created':<15} {'Public':<10}{Colors.END}")
+                print("-" * 110)
                 
-                # Sort by key name for better readability
-                found_keys.sort(key=lambda x: x['name'])
-                
+                # Group keys by directory and sort
+                from collections import defaultdict
+                keys_by_dir = defaultdict(list)
                 for key in found_keys:
-                    public_status = "✅ Yes" if key['has_public'] else "❌ No"
-                    print(f"{key['name']:<25} {key['type']:<15} {key['details']:<20} {key['created']:<15} {public_status:<10}")
+                    keys_by_dir[key['directory']].append(key)
+                
+                # Sort directories, with root (.) first
+                sorted_dirs = sorted(keys_by_dir.keys(), key=lambda x: (x != ".", x))
+                
+                for directory in sorted_dirs:
+                    dir_keys = sorted(keys_by_dir[directory], key=lambda x: x['name'])
+                    
+                    for i, key in enumerate(dir_keys):
+                        dir_display = directory if i == 0 else ""
+                        public_status = "✅ Yes" if key['has_public'] else "❌ No"
+                        print(f"{dir_display:<20} {key['name']:<25} {key['type']:<15} {key['details']:<20} {key['created']:<15} {public_status:<10}")
             
         except Exception as e:
             print(f"Error displaying SSH keys details: {e}")
