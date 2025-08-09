@@ -57,3 +57,9 @@ logs/
 local_config.py
 secrets.py
 .env
+
+# Local configuration files (don't commit actual credentials)
+local_config.py
+secrets.py
+*.key
+*.pem

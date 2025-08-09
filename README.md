@@ -277,6 +277,29 @@ ansible localhost -m ping
 doctl account get
 ```
 
+## Installation
+
+No installation required - just run the script directly:
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/local-dev-env-check.git
+cd local-dev-env-check
+
+# Run the checker
+python3 dev_env_check.py
+```
+
+## System Requirements
+
+- Python 3.6+
+- Standard library only (no external dependencies)
+- Works on macOS, Linux, and Windows
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
 ## License
 
 This project is open source and available under the MIT License.
