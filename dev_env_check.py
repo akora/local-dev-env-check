@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import json
+import argparse
 
 # Color codes for terminal output
 class Colors:
@@ -21,8 +22,11 @@ class Colors:
     END = '\033[0m'
 
 class DevEnvChecker:
-    def __init__(self):
+    def __init__(self, project_path: Optional[str] = None):
+        self.project_path = project_path
         self.results = []
+        if self.project_path:
+            self.project_path = os.path.expanduser(self.project_path)
         self.custom_hosts_entries = []
         
     def add_result(self, category: str, item: str, status: str, details: str = ""):
@@ -276,6 +280,54 @@ class DevEnvChecker:
         except Exception as e:
             self.add_result("GCP", "Application credentials", "ERROR", f"Failed to parse: {str(e)}")
     
+    def check_netlify_cli(self):
+        """Check Netlify CLI status and configuration"""
+        # Check for global config file
+        netlify_config_path = os.path.expanduser("~/.config/netlify/config.json")
+        if os.path.exists(netlify_config_path):
+            try:
+                with open(netlify_config_path, 'r') as f:
+                    config = json.load(f)
+                user_id = config.get('userId')
+                details = f"User ID: {user_id}" if user_id else "Logged out"
+                self.add_result("Netlify", "Global config", "OK", details)
+            except Exception as e:
+                self.add_result("Netlify", "Global config", "ERROR", f"Failed to parse: {str(e)}")
+        else:
+            self.add_result("Netlify", "Global config", "MISSING", f"Path: {netlify_config_path}")
+
+        # Check for CLI and status, using project path if provided
+        if self.check_command_exists("netlify", "Netlify", "Netlify CLI"):
+            try:
+                cwd = None
+                if self.project_path:
+                    if os.path.isdir(self.project_path):
+                        cwd = self.project_path
+                        self.add_result("Netlify", "Project context", "OK", f"Using path: {self.project_path}")
+                    else:
+                        self.add_result("Netlify", "Project context", "ERROR", f"Directory not found: {self.project_path}")
+                        return
+
+                result = subprocess.run(['netlify', 'status'], capture_output=True, text=True, timeout=15, cwd=cwd)
+                if result.returncode == 0:
+                    # Extract user email from status
+                    user_email = "Unknown"
+                    for line in result.stdout.split('\n'):
+                        # Handle different output formats from 'netlify status'
+                        if 'Netlify User:' in line:
+                            user_email = line.split('Netlify User:')[1].strip()
+                            break
+                        elif 'Email:' in line:
+                            user_email = line.split('Email:')[1].strip()
+                            break
+                    self.add_result("Netlify", "Authentication", "OK", f"Logged in as: {user_email}")
+                else:
+                    self.add_result("Netlify", "Authentication", "WARNING", "Not logged in")
+            except subprocess.TimeoutExpired:
+                self.add_result("Netlify", "Authentication", "ERROR", "Request timeout")
+            except Exception as e:
+                self.add_result("Netlify", "Authentication", "ERROR", str(e))
+
     def check_gcp_credentials(self):
         """Check Google Cloud credentials and connectivity with intelligent analysis"""
         # Analyze application credentials
@@ -323,7 +375,13 @@ class DevEnvChecker:
     def check_ansible_config_smart(self):
         """Smart detection for Ansible configuration files"""
         # Check project-local first (highest priority)
-        if os.path.exists('./ansible.cfg'):
+        project_config_path = None
+        if self.project_path:
+            project_config_path = os.path.join(self.project_path, 'ansible.cfg')
+
+        if project_config_path and os.path.exists(project_config_path):
+            self.add_result("Ansible", "Config file", "OK", f"Project: {project_config_path}")
+        elif os.path.exists('./ansible.cfg'):
             self.add_result("Ansible", "Config file", "OK", "Project: ./ansible.cfg")
         # Check user home directory
         elif os.path.exists(os.path.expanduser('~/.ansible.cfg')):
@@ -339,20 +397,24 @@ class DevEnvChecker:
     
     def check_doctl_config_smart(self):
         """Smart detection for DigitalOcean doctl configuration files"""
-        # Project-specific locations to check
         project_configs = [
-            './doctl.yaml',
-            './.doctl/config.yaml',
-            './config/doctl.yaml'
+            'doctl.yaml',
+            '.doctl/config.yaml',
+            'config/doctl.yaml'
         ]
         
         # Check for project-specific config first
         project_found = False
-        for config_path in project_configs:
-            if os.path.exists(config_path):
-                self.add_result("DigitalOcean", "Config file", "OK", f"Project: {config_path}")
-                project_found = True
-                break
+        search_paths = [self.project_path] if self.project_path else ['.']
+
+        for base_path in search_paths:
+            if project_found: break
+            for config_file in project_configs:
+                config_path = os.path.join(base_path, config_file)
+                if os.path.exists(config_path):
+                    self.add_result("DigitalOcean", "Config file", "OK", f"Project: {config_path}")
+                    project_found = True
+                    break
         
         # Check global config if no project config found
         if not project_found:
@@ -960,6 +1022,7 @@ class DevEnvChecker:
         self.check_aws_credentials()
         self.check_gcp_credentials()
         self.check_digitalocean_credentials()
+        self.check_netlify_cli()
         
         # Ansible specific checks
         print("Checking Ansible configuration...")
@@ -1027,7 +1090,11 @@ class DevEnvChecker:
 
 def main():
     """Main function"""
-    checker = DevEnvChecker()
+    parser = argparse.ArgumentParser(description="Local Development Environment Checker.")
+    parser.add_argument('--project-path', type=str, help='Path to the project directory to check.')
+    args = parser.parse_args()
+
+    checker = DevEnvChecker(project_path=args.project_path)
     
     try:
         checker.run_all_checks()

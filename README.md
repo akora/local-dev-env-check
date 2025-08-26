@@ -6,7 +6,7 @@ A simple script to check the status of various files, tools, and configurations 
 
 - ✅ **Intelligent file analysis**: `/etc/hosts` with custom entry detection, SSH config parsing
 - 🛠️ **Command line tools**: Git, Docker, Ansible, Terraform with version checks
-- ☁️ **Cloud provider credentials**: AWS, Google Cloud, DigitalOcean with API connectivity tests
+- ☁️ **Cloud provider credentials**: AWS, Google Cloud, DigitalOcean, Netlify with API connectivity tests
 - 🔧 **Configuration validation**: Ansible and Terraform setup verification
 - 🎨 **Professional output**: Colored terminal with status indicators and tabular formatting
 - 📊 **Detailed analysis**: Summary statistics plus dedicated detail tables
@@ -14,13 +14,18 @@ A simple script to check the status of various files, tools, and configurations 
 - 🔐 **SSH key security**: Detects orphaned keys and weak key types with security warnings
 - 🏠 **Custom host detection**: Identifies non-standard entries in `/etc/hosts` with warnings
 - ⚠️ **Security warnings**: Proactive alerts for potential security issues
+- 📂 **Project-specific context**: Use `--project-path` to check for local configs (Ansible, DigitalOcean, Netlify)
 
 ## Usage
 
 Run the comprehensive Python-based environment checker:
 
 ```bash
+# Run a general check
 python3 dev_env_check.py
+
+# Run a check for a specific project directory
+python3 dev_env_check.py --project-path /path/to/your/project
 ```
 
 The script provides detailed error handling, JSON parsing for API responses, and comprehensive timeout management.
@@ -61,6 +66,11 @@ The script provides detailed error handling, JSON parsing for API responses, and
 
 - Config file (`~/.config/doctl/config.yaml`)
 - doctl CLI installation and API connectivity
+
+#### Netlify
+
+- Config file (`~/.config/netlify/config.json`)
+- Netlify CLI installation and authentication status
 
 ### Configuration Files
 
@@ -276,6 +286,13 @@ ansible localhost -m ping
 # Test DigitalOcean (after adding API token)
 doctl account get
 ```
+
+## Recent Changes
+
+- **v1.1.0**
+  - Added `--project-path` argument to provide project-specific context for checks.
+  - Enhanced Ansible, DigitalOcean, and Netlify checks to use the project path.
+  - Improved Netlify status parsing to correctly identify the logged-in user.
 
 ## Installation
 
