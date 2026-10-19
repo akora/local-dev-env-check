@@ -44,6 +44,9 @@ The script provides detailed error handling, JSON parsing for API responses, and
 
 ### Command Line Tools
 
+- **Homebrew** (macOS) - Package manager; ⚠️ WARNING if installed but not on PATH
+- **Node.js** - Node and npm versions, plus a version manager (nvm, fnm, volta, mise or asdf)
+- **Python** - Python 3 version (notes when it's the Xcode system Python), plus a version manager (pyenv, uv, mise or asdf)
 - **Git** - Version control
 - **Docker** - Containerization platform
 - **Ansible** - Configuration management
@@ -176,7 +179,7 @@ Summary:
   Total checks: 25
   ✅ Passed: 22
   ❌ Failed: 3
-  ⚠️  Warnings: 0
+  ⚠️ Warnings: 0
 
 🔧 SSH Configuration Details
 ====================================================================================================

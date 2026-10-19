@@ -47,9 +47,9 @@ class DevEnvChecker:
         elif status == "ERROR":
             return f"{Colors.RED}❌ ERROR{Colors.END}"
         elif status == "WARNING":
-            return f"{Colors.YELLOW}⚠️  WARNING{Colors.END}"
+            return f"{Colors.YELLOW}⚠️ WARNING{Colors.END}"
         else:
-            return f"{Colors.BLUE}ℹ️  {status}{Colors.END}"
+            return f"{Colors.BLUE}ℹ️ {status}{Colors.END}"
     
     def check_file_exists(self, filepath: str, category: str, description: str):
         """Check if a file exists"""
@@ -995,7 +995,66 @@ class DevEnvChecker:
             
         except Exception as e:
             print(f"Error displaying SSH keys details: {e}")
-    
+
+    def check_homebrew(self):
+        """Check Homebrew installation and whether it is on PATH"""
+        if sys.platform != "darwin":
+            return
+
+        if self.check_command_exists("brew", "Homebrew", "Homebrew (installed)"):
+            try:
+                result = subprocess.run(['brew', '--version'], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    self.add_result("Homebrew", "Homebrew (version)", "OK", result.stdout.strip().split('\n')[0])
+                else:
+                    self.add_result("Homebrew", "Homebrew (version)", "ERROR", result.stderr.strip())
+            except subprocess.TimeoutExpired:
+                self.add_result("Homebrew", "Homebrew (version)", "ERROR", "Command timeout")
+            except Exception as e:
+                self.add_result("Homebrew", "Homebrew (version)", "ERROR", str(e))
+            return
+
+        # Installed but shell not configured (common right after a fresh install)
+        for prefix in ["/opt/homebrew", "/usr/local"]:
+            if os.path.exists(os.path.join(prefix, "bin", "brew")):
+                self.results.pop()  # Replace the MISSING result from check_command_exists
+                self.add_result("Homebrew", "Homebrew (installed)", "WARNING",
+                                f"Found in {prefix} but not on PATH (run brew shellenv)")
+                return
+
+    def detect_version_managers(self, category: str, item: str, candidates: List[str]):
+        """Report which of the given version managers are available (any one is enough)"""
+        found = []
+        for manager in candidates:
+            if manager == "nvm":
+                # nvm is a shell function, not a binary, so look for its install directory
+                nvm_dir = os.environ.get("NVM_DIR", os.path.expanduser("~/.nvm"))
+                if os.path.exists(os.path.join(nvm_dir, "nvm.sh")):
+                    found.append("nvm")
+            elif subprocess.run(['which', manager], capture_output=True, text=True).returncode == 0:
+                found.append(manager)
+
+        if found:
+            self.add_result(category, item, "OK", f"Found: {', '.join(found)}")
+        else:
+            self.add_result(category, item, "MISSING", f"None of: {', '.join(candidates)}")
+
+    def check_node(self):
+        """Check Node.js, npm and Node version managers"""
+        self.check_command_version("node", "Node.js", "Node")
+        self.check_command_version("npm", "Node.js", "npm")
+        self.detect_version_managers("Node.js", "Version manager", ["nvm", "fnm", "volta", "mise", "asdf"])
+
+    def check_python(self):
+        """Check Python 3 and Python version managers"""
+        self.check_command_version("python3", "Python", "Python 3")
+
+        python_path = subprocess.run(['which', 'python3'], capture_output=True, text=True).stdout.strip()
+        if python_path == "/usr/bin/python3":
+            self.add_result("Python", "Python 3 source", "INFO", "System Python (Xcode CLT)")
+
+        self.detect_version_managers("Python", "Version manager", ["pyenv", "uv", "mise", "asdf"])
+
     def run_all_checks(self):
         """Run all environment checks"""
         print(f"{Colors.BOLD}🔍 Local Development Environment Check{Colors.END}\n")
@@ -1012,6 +1071,9 @@ class DevEnvChecker:
         
         # Command line tools
         print("Checking command line tools...")
+        self.check_homebrew()
+        self.check_node()
+        self.check_python()
         self.check_command_version("git", "Tools", "Git")
         self.check_command_version("docker", "Tools", "Docker")
         self.check_command_version("ansible", "Ansible", "Ansible")
@@ -1070,7 +1132,10 @@ class DevEnvChecker:
                 if len(details) > 47:
                     details = details[:44] + "..."
                 
-                print(f"{cat_display:<15} {item['item']:<35} {status_str:<20} {details:<50}")
+                # Emoji widths vary by terminal, so jump to the Details column (ANSI CHA)
+                # instead of padding the status string
+                details_col = 15 + 1 + 35 + 1 + 12 + 1 + 1  # 1-indexed column of 'Details' header
+                print(f"{cat_display:<15} {item['item']:<35} {status_str}\033[{details_col}G{details:<50}")
             
             # Add separator between categories
             if category != list(categories.keys())[-1]:  # Not the last category
@@ -1086,7 +1151,7 @@ class DevEnvChecker:
         print(f"  Total checks: {total}")
         print(f"  {Colors.GREEN}✅ Passed: {ok_count}{Colors.END}")
         print(f"  {Colors.RED}❌ Failed: {error_count}{Colors.END}")
-        print(f"  {Colors.YELLOW}⚠️  Warnings: {warning_count}{Colors.END}")
+        print(f"  {Colors.YELLOW}⚠️ Warnings: {warning_count}{Colors.END}")
 
 def main():
     """Main function"""
