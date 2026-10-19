@@ -482,21 +482,27 @@ class DevEnvChecker:
             
             # Parse known hosts
             hosts = set()
+            hashed_count = 0
+            key_count = 0
             key_types = {}
-            
+
             for line in lines:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
-                
+
                 parts = line.split()
+                # Skip @cert-authority / @revoked markers so the host field is parsed correctly
+                if parts[0].startswith('@'):
+                    parts = parts[1:]
                 if len(parts) >= 3:
                     host_part = parts[0]
                     key_type = parts[1]
-                    
-                    # Extract hostname (handle hashed hosts)
+                    key_count += 1
+
+                    # Extract hostname (hashed hosts can't be told apart, so count them separately)
                     if host_part.startswith('|1|'):
-                        hosts.add('[hashed]')
+                        hashed_count += 1
                     else:
                         # Handle comma-separated hosts and ports
                         for host in host_part.split(','):
@@ -508,9 +514,11 @@ class DevEnvChecker:
                     # Count key types
                     key_types[key_type] = key_types.get(key_type, 0) + 1
             
-            # Create simple summary - just entry count
-            non_empty_lines = [line for line in lines if line.strip() and not line.strip().startswith('#')]
-            summary = f"Entries: {len(non_empty_lines)}"
+            # A host usually has several keys (ed25519, rsa, ecdsa), so report both counts
+            summary = f"Hosts: {len(hosts)}"
+            if hashed_count:
+                summary += f" (+{hashed_count} hashed)"
+            summary += f", Keys: {key_count}"
             
             self.add_result("SSH", "Known hosts", "OK", summary)
             
@@ -827,9 +835,14 @@ class DevEnvChecker:
                     continue
                 
                 parts = line.split()
+                # Keep @cert-authority / @revoked markers visible next to the key type
+                marker = ""
+                if parts[0].startswith('@'):
+                    marker = f" ({parts[0]})"
+                    parts = parts[1:]
                 if len(parts) >= 3:
                     host_part = parts[0]
-                    key_type = parts[1]
+                    key_type = parts[1] + marker
                     # Extract hostname (handle hashed hosts)
                     if host_part.startswith('|1|'):
                         display_host = '[hashed]'
